@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Confirm delete{% endblock %}
+{% block heading %}Delete {{ object_type }}{% endblock %}
+{% block period %}{% endblock %}
+
+{% block content %}
+<div class="card card-soft p-4" style="max-width: 640px;">
+  <p>Are you sure you want to delete this {{ object_type }}?</p>
+  <p class="fw-semibold">{{ object }}</p>
+  <form method="post">
+    {% csrf_token %}
+    <button class="btn btn-danger" type="submit">Yes, delete</button>
+    <a class="btn btn-outline-secondary" href="javascript:history.back()">Cancel</a>
+  </form>
+</div>
+{% endblock %}

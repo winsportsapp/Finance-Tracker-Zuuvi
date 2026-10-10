@@ -1,0 +1,126 @@
+:root {
+  --sidebar-width: 250px;
+  --brand: #12324d;
+  --brand-2: #1b4f72;
+  --accent: #0f766e;
+  --page: #f4f7fb;
+}
+
+body.app-body {
+  background: var(--page);
+  min-height: 100vh;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  background: linear-gradient(180deg, var(--brand), var(--brand-2));
+  color: #fff;
+  min-height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1030;
+  padding: 1.25rem 0.85rem;
+}
+
+.sidebar .brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.25rem 0.75rem 1rem;
+}
+
+.sidebar .brand small {
+  display: block;
+  font-weight: 400;
+  opacity: 0.75;
+  font-size: 0.78rem;
+}
+
+.sidebar .nav-link {
+  color: rgba(255, 255, 255, 0.86);
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.8rem;
+  margin-bottom: 0.2rem;
+}
+
+.sidebar .nav-link:hover,
+.sidebar .nav-link.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.sidebar .logout-form {
+  padding: 0.75rem;
+}
+
+.content-wrap {
+  margin-left: var(--sidebar-width);
+  padding: 1.5rem;
+}
+
+.page-title {
+  font-weight: 700;
+  color: #16324a;
+}
+
+.summary-card {
+  border: 0;
+  border-radius: 1rem;
+  box-shadow: 0 8px 24px rgba(18, 50, 77, 0.06);
+}
+
+.summary-card .label {
+  color: #64748b;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summary-card .value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #12324d;
+}
+
+.card-soft {
+  border: 0;
+  border-radius: 1rem;
+  box-shadow: 0 8px 24px rgba(18, 50, 77, 0.06);
+}
+
+.table thead th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
+}
+
+.login-wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(160deg, #12324d, #1b4f72 45%, #0f766e);
+}
+
+.login-card {
+  width: min(440px, 92vw);
+  border: 0;
+  border-radius: 1.1rem;
+}
+
+.accent-income { color: #0f766e; }
+.accent-expense { color: #b45309; }
+.accent-warn { color: #b91c1c; }
+
+@media (max-width: 991.98px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    min-height: auto;
+  }
+  .content-wrap {
+    margin-left: 0;
+    padding: 1rem;
+  }
+}

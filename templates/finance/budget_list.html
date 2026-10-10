@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load money_tags %}
+{% block title %}Budgets{% endblock %}
+{% block heading %}Budgets{% endblock %}
+{% block subtitle %}{{ period_label }} · one planned amount per expense category per month{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-primary" href="{% url 'finance:budget_create' %}">Add budget</a>
+</div>
+
+<form class="card card-soft p-3 mb-3" method="get">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label" for="filter_year">Year</label>
+      <select class="form-select" id="filter_year" name="filter_year">
+        {% for y in year_choices %}
+          <option value="{{ y }}" {% if y == period_year %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="month">Month</label>
+      <select class="form-select" id="month" name="month">
+        {% for num, label in month_choices %}
+          <option value="{{ num }}" {% if num == period_month %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="category">Category</label>
+      <select class="form-select" id="category" name="category">
+        <option value="">All expense categories</option>
+        {% for cat in expense_categories %}
+          <option value="{{ cat.pk }}" {% if category_id|stringformat:"s" == cat.pk|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-primary w-100" type="submit">Filter</button>
+    </div>
+  </div>
+</form>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-4"><div class="card summary-card p-3"><div class="label">Total budget</div><div class="value">{{ bva.total_budget|inr }}</div></div></div>
+  <div class="col-md-4"><div class="card summary-card p-3"><div class="label">Actual expenses</div><div class="value">{{ bva.total_actual|inr }}</div></div></div>
+  <div class="col-md-4"><div class="card summary-card p-3"><div class="label">Remaining budget</div><div class="value">{{ bva.remaining_budget|inr }}</div></div></div>
+</div>
+
+<div class="card card-soft p-3">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th class="text-end">Budget</th>
+          <th class="text-end">Actual</th>
+          <th class="text-end">Remaining</th>
+          <th class="text-end">Utilization %</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in bva.rows %}
+        <tr>
+          <td>{{ row.category }}</td>
+          <td class="text-end">{{ row.budget|inr }}</td>
+          <td class="text-end">{{ row.actual|inr }}</td>
+          <td class="text-end">{{ row.remaining|inr }}</td>
+          <td class="text-end">{{ row.utilization }}%</td>
+          <td><span class="badge {{ row.status|status_badge }}">{{ row.status }}</span></td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'finance:budget_edit' row.budget_id %}">Edit</a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'finance:budget_delete' row.budget_id %}">Delete</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-secondary">No budgets for this month.</td></tr>
+        {% endfor %}
+        {% for row in bva.unbudgeted %}
+        <tr>
+          <td>{{ row.category }}</td>
+          <td class="text-end">—</td>
+          <td class="text-end">{{ row.actual|inr }}</td>
+          <td class="text-end">{{ row.remaining|inr }}</td>
+          <td class="text-end">—</td>
+          <td><span class="badge {{ row.status|status_badge }}">{{ row.status }}</span></td>
+          <td></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

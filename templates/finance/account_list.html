@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% load money_tags %}
+{% block title %}Bank accounts{% endblock %}
+{% block heading %}Bank and cash accounts{% endblock %}
+{% block subtitle %}Current balance = opening balance + credits − debits from the opening date onward{% endblock %}
+{% block period %}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-primary" href="{% url 'finance:account_create' %}">Add account</a>
+  <a class="btn btn-outline-primary" href="{% url 'finance:transfer_create' %}">Transfer between accounts</a>
+</div>
+<div class="card summary-card p-3 mb-3">
+  <div class="label">Total active account balance</div>
+  <div class="value">{{ total_balance|inr }}</div>
+</div>
+<div class="card card-soft p-3">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th>Type</th>
+          <th>Bank</th>
+          <th class="text-end">Opening</th>
+          <th class="text-end">Credits</th>
+          <th class="text-end">Debits</th>
+          <th class="text-end">Current balance</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in accounts %}
+        <tr>
+          <td><a href="{% url 'finance:account_detail' item.account.pk %}">{{ item.account.name }}</a></td>
+          <td>{{ item.account.get_account_type_display }}</td>
+          <td>{{ item.account.bank_name|default:"—" }}</td>
+          <td class="text-end">{{ item.opening_balance|inr }}</td>
+          <td class="text-end">{{ item.total_credits|inr }}</td>
+          <td class="text-end">{{ item.total_debits|inr }}</td>
+          <td class="text-end fw-semibold">{{ item.current_balance|inr }}</td>
+          <td>{% if item.account.is_active %}Active{% else %}Inactive{% endif %}</td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'finance:account_edit' item.account.pk %}">Edit</a>
+            <form class="d-inline" method="post" action="{% url 'finance:account_delete' item.account.pk %}" onsubmit="return confirm('Deactivate or delete this account?');">
+              {% csrf_token %}
+              <button class="btn btn-sm btn-outline-danger" type="submit">Deactivate / delete</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-secondary">No accounts yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

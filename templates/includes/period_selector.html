@@ -1,0 +1,19 @@
+<form class="d-flex gap-2 align-items-end" method="get">
+  <div>
+    <label class="form-label small mb-1" for="month">Month</label>
+    <select class="form-select form-select-sm" id="month" name="month">
+      {% for num, label in month_choices %}
+        <option value="{{ num }}" {% if num == period_month %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label small mb-1" for="year">Year</label>
+    <select class="form-select form-select-sm" id="year" name="year">
+      {% for y in year_choices %}
+        <option value="{{ y }}" {% if y == period_year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn btn-sm btn-primary" type="submit">Apply</button>
+</form>

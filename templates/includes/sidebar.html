@@ -1,0 +1,19 @@
+<aside class="sidebar">
+  <div class="brand">
+    {{ company.company_name|default:"Zuuvi" }}
+    <small>Budget &amp; transactions</small>
+  </div>
+  <nav class="nav flex-column px-2">
+    <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'finance:dashboard' %}">Dashboard</a>
+    <a class="nav-link {% if 'transaction' in request.resolver_match.url_name or 'transfer' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'finance:transaction_list' %}">Transactions</a>
+    <a class="nav-link {% if 'budget' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'finance:budget_list' %}">Budgets</a>
+    <a class="nav-link {% if 'account' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'finance:account_list' %}">Bank Accounts</a>
+    <a class="nav-link {% if 'category' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'finance:category_list' %}">Categories</a>
+    <a class="nav-link {% if request.resolver_match.url_name == 'reports' %}active{% endif %}" href="{% url 'finance:reports' %}">Reports</a>
+    <a class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" href="{% url 'finance:settings' %}">Settings</a>
+  </nav>
+  <form class="logout-form" method="post" action="{% url 'logout' %}">
+    {% csrf_token %}
+    <button class="btn btn-outline-light w-100 btn-sm" type="submit">Logout</button>
+  </form>
+</aside>

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load money_tags %}
+{% block title %}Transaction{% endblock %}
+{% block heading %}Transaction detail{% endblock %}
+{% block period %}{% endblock %}
+
+{% block content %}
+<div class="card card-soft p-4" style="max-width: 720px;">
+  <dl class="row mb-0">
+    <dt class="col-sm-4">Date</dt><dd class="col-sm-8">{{ txn.date }}</dd>
+    <dt class="col-sm-4">Type</dt><dd class="col-sm-8">{{ txn.get_entry_type_display }}</dd>
+    <dt class="col-sm-4">Amount</dt><dd class="col-sm-8">{{ txn.amount|inr }}</dd>
+    <dt class="col-sm-4">Category</dt><dd class="col-sm-8">{% if txn.kind == "transfer" %}Internal transfer{% else %}{{ txn.category }}{% endif %}</dd>
+    <dt class="col-sm-4">Account</dt><dd class="col-sm-8">{{ txn.account }}</dd>
+    <dt class="col-sm-4">Description</dt><dd class="col-sm-8">{{ txn.description }}</dd>
+    <dt class="col-sm-4">Reference</dt><dd class="col-sm-8">{{ txn.reference_number|default:"—" }}</dd>
+    <dt class="col-sm-4">Notes</dt><dd class="col-sm-8">{{ txn.notes|default:"—" }}</dd>
+    <dt class="col-sm-4">Receipt</dt>
+    <dd class="col-sm-8">
+      {% if txn.receipt %}<a href="{{ txn.receipt.url }}" target="_blank" rel="noopener">View receipt</a>{% else %}—{% endif %}
+    </dd>
+  </dl>
+  <div class="mt-3">
+    <a class="btn btn-primary" href="{% url 'finance:transaction_edit' txn.pk %}">Edit</a>
+    <a class="btn btn-outline-danger" href="{% url 'finance:transaction_delete' txn.pk %}">Delete</a>
+  </div>
+</div>
+{% endblock %}

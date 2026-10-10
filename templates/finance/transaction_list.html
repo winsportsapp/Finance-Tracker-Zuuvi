@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% load money_tags %}
+
+{% block title %}Transactions{% endblock %}
+{% block heading %}Transactions{% endblock %}
+{% block subtitle %}Search, filter, and keep every inflow and outflow on record{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-primary" href="{% url 'finance:transaction_create' %}">Add transaction</a>
+  <a class="btn btn-outline-primary" href="{% url 'finance:transfer_create' %}">Transfer between accounts</a>
+</div>
+
+<form class="card card-soft p-3 mb-3" method="get">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label" for="q">Search</label>
+      <input class="form-control" id="q" name="q" value="{{ q }}" placeholder="Description or reference">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="start">From</label>
+      <input class="form-control" id="start" type="date" name="start" value="{{ start }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="end">To</label>
+      <input class="form-control" id="end" type="date" name="end" value="{{ end }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="entry_type">Type</label>
+      <select class="form-select" id="entry_type" name="entry_type">
+        <option value="">All</option>
+        <option value="debit" {% if entry_type == "debit" %}selected{% endif %}>Debit</option>
+        <option value="credit" {% if entry_type == "credit" %}selected{% endif %}>Credit</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="category">Category</label>
+      <select class="form-select" id="category" name="category">
+        <option value="">All</option>
+        {% for cat in categories %}
+          <option value="{{ cat.pk }}" {% if category_id|stringformat:"s" == cat.pk|stringformat:"s" %}selected{% endif %}>{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="account">Account</label>
+      <select class="form-select" id="account" name="account">
+        <option value="">All</option>
+        {% for acc in accounts %}
+          <option value="{{ acc.pk }}" {% if account_id|stringformat:"s" == acc.pk|stringformat:"s" %}selected{% endif %}>{{ acc }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label" for="sort">Sort</label>
+      <select class="form-select" id="sort" name="sort">
+        <option value="-date" {% if sort == "-date" %}selected{% endif %}>Date (newest)</option>
+        <option value="date" {% if sort == "date" %}selected{% endif %}>Date (oldest)</option>
+        <option value="-amount" {% if sort == "-amount" %}selected{% endif %}>Amount (high)</option>
+        <option value="amount" {% if sort == "amount" %}selected{% endif %}>Amount (low)</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <div class="form-check mt-4">
+        <input class="form-check-input" type="checkbox" name="all" value="1" id="all" {% if showing_all %}checked{% endif %}>
+        <label class="form-check-label" for="all">All dates</label>
+      </div>
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-primary w-100" type="submit">Filter</button>
+    </div>
+  </div>
+</form>
+
+<div class="card card-soft p-3">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Category</th>
+          <th>Account</th>
+          <th>Reference</th>
+          <th class="text-end">Amount</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for txn in page %}
+        <tr>
+          <td>{{ txn.date }}</td>
+          <td>{{ txn.get_entry_type_display }}</td>
+          <td><a href="{% url 'finance:transaction_detail' txn.pk %}">{{ txn.description }}</a></td>
+          <td>{% if txn.kind == "transfer" %}<span class="badge text-bg-secondary">Transfer</span>{% else %}{{ txn.category }}{% endif %}</td>
+          <td>{{ txn.account }}</td>
+          <td>{{ txn.reference_number|default:"—" }}</td>
+          <td class="text-end">{{ txn.amount|inr }}</td>
+          <td class="text-end text-nowrap">
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'finance:transaction_edit' txn.pk %}">Edit</a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'finance:transaction_delete' txn.pk %}">Delete</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-secondary">No transactions match these filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page.has_other_pages %}
+    <nav>
+      <ul class="pagination mb-0">
+        {% if page.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ page.previous_page_number }}&q={{ q }}&entry_type={{ entry_type }}&category={{ category_id }}&account={{ account_id }}&start={{ start }}&end={{ end }}&sort={{ sort }}{% if showing_all %}&all=1{% endif %}">Previous</a></li>{% endif %}
+        <li class="page-item disabled"><span class="page-link">Page {{ page.number }} of {{ page.paginator.num_pages }}</span></li>
+        {% if page.has_next %}<li class="page-item"><a class="page-link" href="?page={{ page.next_page_number }}&q={{ q }}&entry_type={{ entry_type }}&category={{ category_id }}&account={{ account_id }}&start={{ start }}&end={{ end }}&sort={{ sort }}{% if showing_all %}&all=1{% endif %}">Next</a></li>{% endif %}
+      </ul>
+    </nav>
+  {% endif %}
+</div>
+{% endblock %}

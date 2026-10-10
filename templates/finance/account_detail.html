@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load money_tags %}
+{% block title %}{{ account.name }}{% endblock %}
+{% block heading %}{{ account.name }}{% endblock %}
+{% block subtitle %}{{ account.get_account_type_display }}{% endblock %}
+{% block period %}{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><div class="card summary-card p-3"><div class="label">Opening balance</div><div class="value">{{ movement.opening_balance|inr }}</div><div class="small text-secondary">From {{ account.opening_balance_date }}</div></div></div>
+  <div class="col-md-3"><div class="card summary-card p-3"><div class="label">Credits</div><div class="value accent-income">{{ movement.total_credits|inr }}</div></div></div>
+  <div class="col-md-3"><div class="card summary-card p-3"><div class="label">Debits</div><div class="value accent-expense">{{ movement.total_debits|inr }}</div></div></div>
+  <div class="col-md-3"><div class="card summary-card p-3"><div class="label">Current balance</div><div class="value">{{ movement.current_balance|inr }}</div></div></div>
+</div>
+<p class="text-secondary">{{ account.notes }}</p>
+<p class="small text-secondary">Transactions dated before {{ account.opening_balance_date }} are excluded from this balance because they are assumed to already sit inside the opening balance.</p>
+<a class="btn btn-outline-primary mb-3" href="{% url 'finance:account_edit' account.pk %}">Edit account</a>
+<div class="card card-soft p-3">
+  <h2 class="h5">Recent activity</h2>
+  <div class="table-responsive">
+    <table class="table">
+      <thead><tr><th>Date</th><th>Type</th><th>Description</th><th class="text-end">Amount</th></tr></thead>
+      <tbody>
+        {% for txn in txns %}
+        <tr>
+          <td>{{ txn.date }}</td>
+          <td>{{ txn.get_entry_type_display }}</td>
+          <td><a href="{% url 'finance:transaction_detail' txn.pk %}">{{ txn.description }}</a></td>
+          <td class="text-end">{{ txn.amount|inr }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="text-secondary">No transactions on this account.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
