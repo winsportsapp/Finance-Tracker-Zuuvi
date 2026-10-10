@@ -1,4 +1,6 @@
 import csv
+from datetime import date
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
@@ -14,12 +16,15 @@ from .forms import (
     AccountForm,
     BudgetForm,
     CategoryForm,
+    EmiPaymentForm,
+    LoanForm,
     SettingsForm,
     StyledAuthenticationForm,
     TransactionForm,
     TransferForm,
 )
-from .models import Account, Budget, Category, CompanySettings, Transaction
+from .models import Account, Budget, Category, CompanySettings, Loan, Transaction
+from .money import ZERO
 from .period import get_selected_period, month_name
 from .services import (
     account_movement,
@@ -27,10 +32,13 @@ from .services import (
     create_transfer,
     dashboard_summary,
     delete_transfer,
+    emi_reminders,
     expenses_by_category,
     income_expense_totals,
+    loan_status,
     monthly_summaries,
     next_month_run_estimate,
+    record_emi_payment,
     total_account_balance,
     transfer_legs,
     update_transfer,
@@ -84,6 +92,7 @@ def dashboard(request):
             "recent": recent,
             "estimate": estimate,
             "chart": chart,
+            "emi": emi_reminders(year, month),
         },
     )
 
@@ -347,12 +356,12 @@ def category_edit(request, pk):
 @require_POST
 def category_delete(request, pk):
     category = get_object_or_404(Category, pk=pk)
-    if category.has_transactions():
+    if category.is_in_use():
         category.is_active = False
         category.save(update_fields=["is_active"])
         messages.warning(
             request,
-            "This category is used by existing transactions, so it was deactivated instead of deleted.",
+            "This category is used by existing transactions or budgets, so it was deactivated instead of deleted.",
         )
         return redirect("finance:category_list")
     category.delete()
@@ -410,7 +419,7 @@ def account_detail(request, pk):
 @require_POST
 def account_delete(request, pk):
     account = get_object_or_404(Account, pk=pk)
-    if account.has_transactions():
+    if account.has_transactions() or account.loans.exists():
         account.is_active = False
         account.save(update_fields=["is_active"])
         messages.warning(
@@ -421,6 +430,98 @@ def account_delete(request, pk):
     account.delete()
     messages.success(request, "Account deleted.")
     return redirect("finance:account_list")
+
+
+@login_required
+def loan_list(request):
+    loans = [loan_status(loan) for loan in Loan.objects.select_related("repayment_account").prefetch_related("emi_payments")]
+    return render(
+        request,
+        "finance/loan_list.html",
+        {
+            "loans": loans,
+            "total_outstanding": sum(
+                (item["remaining_payable"] for item in loans if item["loan"].is_active), ZERO
+            ),
+        },
+    )
+
+
+@login_required
+def loan_create(request):
+    form = LoanForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        loan = form.save()
+        messages.success(request, "Loan added.")
+        return redirect("finance:loan_detail", pk=loan.pk)
+    return render(request, "finance/loan_form.html", {"form": form, "title": "Add loan"})
+
+
+@login_required
+def loan_edit(request, pk):
+    loan = get_object_or_404(Loan, pk=pk)
+    form = LoanForm(request.POST or None, instance=loan)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Loan updated.")
+        return redirect("finance:loan_detail", pk=loan.pk)
+    return render(request, "finance/loan_form.html", {"form": form, "title": "Edit loan"})
+
+
+@login_required
+def loan_detail(request, pk):
+    loan = get_object_or_404(Loan.objects.select_related("repayment_account"), pk=pk)
+    return render(request, "finance/loan_detail.html", {"status": loan_status(loan), "loan": loan})
+
+
+@login_required
+def emi_pay(request, pk):
+    loan = get_object_or_404(Loan, pk=pk)
+    status = loan_status(loan)
+    if status["next_due"] is None:
+        messages.info(request, "All EMIs for this loan are already paid.")
+        return redirect("finance:loan_detail", pk=loan.pk)
+    month = request.GET.get("month", "")
+    emi_month = status["next_due"]["emi_month"]
+    if month:
+        try:
+            emi_month = date.fromisoformat(f"{month}-01")
+        except ValueError:
+            pass
+    initial = {
+        "emi_month": emi_month.isoformat(),
+        "date": timezone.localdate(),
+        "amount": loan.emi_amount,
+        "account": loan.repayment_account_id,
+    }
+    form = EmiPaymentForm(request.POST or None, loan=loan, initial=initial)
+    if request.method == "POST" and form.is_valid():
+        record_emi_payment(
+            loan=loan,
+            emi_month=form.cleaned_data["emi_month"],
+            date=form.cleaned_data["date"],
+            amount=form.cleaned_data["amount"],
+            account=form.cleaned_data["account"],
+            reference=form.cleaned_data["reference_number"],
+            notes=form.cleaned_data["notes"],
+        )
+        messages.success(request, "EMI payment recorded. It counts as a Loan EMI expense.")
+        return redirect("finance:loan_detail", pk=loan.pk)
+    return render(request, "finance/emi_payment_form.html", {"form": form, "loan": loan})
+
+
+@login_required
+@require_POST
+def loan_delete(request, pk):
+    loan = get_object_or_404(Loan, pk=pk)
+    if loan.emi_payments.exists():
+        loan.is_active = False
+        loan.save(update_fields=["is_active"])
+        messages.warning(request, "This loan has EMI payments, so it was closed instead of deleted.")
+        return redirect("finance:loan_list")
+    loan.delete()
+    messages.success(request, "Loan deleted.")
+    return redirect("finance:loan_list")
 
 
 @login_required

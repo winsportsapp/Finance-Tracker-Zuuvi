@@ -1,7 +1,8 @@
+from datetime import date
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.core.validators import FileExtensionValidator, MinValueValidator
+from django.core.validators import FileExtensionValidator, MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 
@@ -72,6 +73,9 @@ class Category(models.Model):
     def has_transactions(self):
         return self.transactions.exists()
 
+    def is_in_use(self):
+        return self.has_transactions() or self.budgets.exists()
+
 
 class Account(models.Model):
     BANK = "bank"
@@ -122,6 +126,71 @@ class Account(models.Model):
         return self.transactions.exists()
 
 
+class Loan(models.Model):
+    name = models.CharField(max_length=100, unique=True, help_text="For example: Delivery van loan")
+    lender = models.CharField(max_length=100, help_text="Bank or lender name")
+    loan_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text="Original loan amount, for reference only.",
+    )
+    emi_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    emi_day = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(28)],
+        help_text="Day of the month the EMI is due (1–28).",
+    )
+    first_emi_month = models.DateField(
+        help_text=(
+            "Month of the first EMI you will record here. If the loan started earlier, "
+            "enter the next EMI month and the number of EMIs left."
+        )
+    )
+    tenure_months = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1)],
+        help_text="Number of EMIs from the first EMI month.",
+    )
+    repayment_account = models.ForeignKey(
+        Account,
+        on_delete=models.PROTECT,
+        related_name="loans",
+        help_text="Account the EMI is usually paid from.",
+    )
+    notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.CheckConstraint(condition=Q(emi_amount__gt=0), name="loan_emi_positive"),
+            models.CheckConstraint(condition=Q(emi_day__gte=1, emi_day__lte=28), name="loan_emi_day_valid"),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if self.first_emi_month:
+            self.first_emi_month = self.first_emi_month.replace(day=1)
+        super().save(*args, **kwargs)
+
+    def schedule_months(self):
+        """First day of each EMI month, in order."""
+        months = []
+        year, month = self.first_emi_month.year, self.first_emi_month.month
+        for _ in range(self.tenure_months):
+            months.append(date(year, month, 1))
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        return months
+
+    def due_date(self, emi_month):
+        return emi_month.replace(day=self.emi_day)
+
+
 class Transaction(models.Model):
     DEBIT = "debit"
     CREDIT = "credit"
@@ -166,6 +235,14 @@ class Transaction(models.Model):
     )
     kind = models.CharField(max_length=12, choices=KIND_CHOICES, default=KIND_OPERATING)
     transfer_group = models.UUIDField(null=True, blank=True, db_index=True)
+    loan = models.ForeignKey(
+        Loan,
+        on_delete=models.PROTECT,
+        related_name="emi_payments",
+        null=True,
+        blank=True,
+    )
+    emi_month = models.DateField(null=True, blank=True, help_text="EMI month this payment covers.")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -179,6 +256,17 @@ class Transaction(models.Model):
                     | Q(kind="transfer", category__isnull=True)
                 ),
                 name="txn_category_matches_kind",
+            ),
+            models.CheckConstraint(
+                condition=Q(loan__isnull=True, emi_month__isnull=True)
+                | Q(loan__isnull=False, emi_month__isnull=False, kind="operating", entry_type="debit"),
+                name="txn_emi_fields_together",
+            ),
+            models.UniqueConstraint(
+                fields=["loan", "emi_month"],
+                condition=Q(loan__isnull=False),
+                name="unique_emi_payment_per_month",
+                violation_error_message="This EMI month has already been paid.",
             ),
         ]
 

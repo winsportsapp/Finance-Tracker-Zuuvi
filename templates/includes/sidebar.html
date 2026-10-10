@@ -8,6 +8,7 @@
     <a class="nav-link {% if 'transaction' in request.resolver_match.url_name or 'transfer' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'finance:transaction_list' %}">Transactions</a>
     <a class="nav-link {% if 'budget' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'finance:budget_list' %}">Budgets</a>
     <a class="nav-link {% if 'account' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'finance:account_list' %}">Bank Accounts</a>
+    <a class="nav-link {% if 'loan' in request.resolver_match.url_name or 'emi' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'finance:loan_list' %}">Loans &amp; EMI</a>
     <a class="nav-link {% if 'category' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'finance:category_list' %}">Categories</a>
     <a class="nav-link {% if request.resolver_match.url_name == 'reports' %}active{% endif %}" href="{% url 'finance:reports' %}">Reports</a>
     <a class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" href="{% url 'finance:settings' %}">Settings</a>

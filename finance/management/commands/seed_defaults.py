@@ -21,6 +21,7 @@ EXPENSE_CATEGORIES = [
     ("Repairs and Maintenance", "General repairs"),
     ("Bank Charges", "Bank fees and charges"),
     ("Miscellaneous Expenses", "Other operating expenses"),
+    ("Loan EMI", "Loan EMI payments (full EMI counted as expense)"),
 ]
 
 INCOME_CATEGORIES = [

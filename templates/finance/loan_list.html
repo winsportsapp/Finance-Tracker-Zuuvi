@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load money_tags %}
+{% block title %}Loans &amp; EMI{% endblock %}
+{% block heading %}Loans &amp; EMI{% endblock %}
+{% block subtitle %}Remaining payable = remaining EMIs × EMI amount. Each EMI paid counts as a Loan EMI expense.{% endblock %}
+{% block period %}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-primary" href="{% url 'finance:loan_create' %}">Add loan</a>
+</div>
+<div class="card summary-card tile-expense p-3 mb-3">
+  <div class="label">Total remaining EMIs payable (active loans)</div>
+  <div class="value">{{ total_outstanding|inr }}</div>
+</div>
+<div class="card card-soft p-3">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Loan</th>
+          <th>Lender</th>
+          <th class="text-end">EMI</th>
+          <th>Due day</th>
+          <th>EMIs paid</th>
+          <th class="text-end">Remaining payable</th>
+          <th>Next EMI</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in loans %}
+        <tr>
+          <td><a href="{% url 'finance:loan_detail' item.loan.pk %}">{{ item.loan.name }}</a></td>
+          <td>{{ item.loan.lender }}</td>
+          <td class="text-end">{{ item.loan.emi_amount|inr }}</td>
+          <td>{{ item.loan.emi_day }}</td>
+          <td>{{ item.paid_count }} / {{ item.loan.tenure_months }}</td>
+          <td class="text-end fw-semibold">{{ item.remaining_payable|inr }}</td>
+          <td>{% if item.next_due %}{{ item.next_due.due_date }}{% else %}—{% endif %}</td>
+          <td>
+            {% if not item.loan.is_active %}<span class="badge text-bg-secondary">Closed</span>
+            {% elif item.overdue %}<span class="badge bg-danger-subtle text-danger-emphasis">{{ item.overdue|length }} overdue</span>
+            {% elif not item.next_due %}<span class="badge bg-success-subtle text-success-emphasis">Fully paid</span>
+            {% else %}<span class="badge bg-primary-subtle text-primary-emphasis">On track</span>{% endif %}
+          </td>
+          <td class="text-end text-nowrap">
+            {% if item.loan.is_active and item.next_due %}
+            <a class="btn btn-sm btn-primary" href="{% url 'finance:emi_pay' item.loan.pk %}">Pay EMI</a>
+            {% endif %}
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'finance:loan_edit' item.loan.pk %}">Edit</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="text-secondary">No loans yet. Add a loan to track its EMIs.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

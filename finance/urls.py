@@ -27,6 +27,12 @@ urlpatterns = [
     path("accounts/<int:pk>/", views.account_detail, name="account_detail"),
     path("accounts/<int:pk>/edit/", views.account_edit, name="account_edit"),
     path("accounts/<int:pk>/delete/", views.account_delete, name="account_delete"),
+    path("loans/", views.loan_list, name="loan_list"),
+    path("loans/add/", views.loan_create, name="loan_create"),
+    path("loans/<int:pk>/", views.loan_detail, name="loan_detail"),
+    path("loans/<int:pk>/edit/", views.loan_edit, name="loan_edit"),
+    path("loans/<int:pk>/pay/", views.emi_pay, name="emi_pay"),
+    path("loans/<int:pk>/delete/", views.loan_delete, name="loan_delete"),
     path("reports/", views.reports, name="reports"),
     path("settings/", views.settings_view, name="settings"),
 ]

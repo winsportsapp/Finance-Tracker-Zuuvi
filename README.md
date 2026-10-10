@@ -62,6 +62,15 @@ python manage.py test finance
 9. Pages except login require authentication. Forms use Django CSRF protection.
 10. The selected month/year is stored in the session and reused on the dashboard, budgets, and reports.
 
+### Loans & EMI
+
+- Track loans the business has taken (Loans & EMI page). Each loan has an EMI amount, due day (1–28), first EMI month, and number of EMIs.
+- Recording an EMI payment creates a normal **debit** transaction in the **Loan EMI** expense category, linked to the loan and EMI month. The **whole EMI counts as an expense** and against the Loan EMI budget, and it reduces the paying account's balance.
+- Each EMI month can be paid only once. Deleting the EMI transaction reopens that month.
+- Remaining payable = remaining EMIs × EMI amount. Loan disbursement (money received) is not recorded.
+- An EMI is **Overdue** when its due date has passed with no payment, and **Due** when it falls in the current month. The dashboard lists overdue EMIs, EMIs for the selected month, and total remaining EMIs.
+- A loan with payments is closed (deactivated) instead of deleted.
+
 ### Budget status
 
 - Within Budget: below the warning threshold (default 90%)

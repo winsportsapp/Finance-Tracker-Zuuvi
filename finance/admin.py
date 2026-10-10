@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Account, Budget, Category, CompanySettings, Transaction
+from .models import Account, Budget, Category, CompanySettings, Loan, Transaction
 
 
 @admin.register(CompanySettings)
@@ -26,6 +26,12 @@ class TransactionAdmin(admin.ModelAdmin):
     list_display = ("date", "entry_type", "amount", "category", "account", "kind", "description")
     list_filter = ("entry_type", "kind", "account")
     search_fields = ("description", "reference_number")
+
+
+@admin.register(Loan)
+class LoanAdmin(admin.ModelAdmin):
+    list_display = ("name", "lender", "emi_amount", "emi_day", "first_emi_month", "tenure_months", "is_active")
+    list_filter = ("is_active",)
 
 
 @admin.register(Budget)

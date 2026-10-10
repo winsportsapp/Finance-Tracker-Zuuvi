@@ -6,7 +6,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from .models import Account, Budget, Category, CompanySettings, Transaction
+from .models import Account, Budget, Category, CompanySettings, Loan, Transaction
 from .money import ZERO, as_money
 from .period import month_bounds, month_name
 
@@ -317,6 +317,110 @@ def transfer_legs(group):
     debit = next((leg for leg in legs if leg.entry_type == Transaction.DEBIT), None)
     credit = next((leg for leg in legs if leg.entry_type == Transaction.CREDIT), None)
     return debit, credit
+
+
+EMI_CATEGORY_NAME = "Loan EMI"
+
+EMI_PAID = "Paid"
+EMI_DUE = "Due"
+EMI_OVERDUE = "Overdue"
+EMI_UPCOMING = "Upcoming"
+
+
+def ensure_emi_category() -> Category:
+    category, _ = Category.objects.get_or_create(
+        name=EMI_CATEGORY_NAME,
+        category_type=Category.EXPENSE,
+        defaults={"description": "Loan EMI payments (full EMI counted as expense)"},
+    )
+    return category
+
+
+def emi_state(loan: Loan, emi_month: date, paid: bool, today: date) -> str:
+    if paid:
+        return EMI_PAID
+    due = loan.due_date(emi_month)
+    if due < today:
+        return EMI_OVERDUE
+    if (due.year, due.month) == (today.year, today.month):
+        return EMI_DUE
+    return EMI_UPCOMING
+
+
+def loan_schedule(loan: Loan, today: date | None = None) -> list[dict]:
+    today = today or timezone.localdate()
+    payments = {txn.emi_month: txn for txn in loan.emi_payments.all()}
+    return [
+        {
+            "emi_month": emi_month,
+            "due_date": loan.due_date(emi_month),
+            "payment": payments.get(emi_month),
+            "state": emi_state(loan, emi_month, emi_month in payments, today),
+        }
+        for emi_month in loan.schedule_months()
+    ]
+
+
+def loan_status(loan: Loan, today: date | None = None) -> dict:
+    """
+    Remaining Payable = Remaining EMIs x EMI amount.
+    Paid count comes from linked EMI payment transactions, so deleting a payment reopens that month.
+    """
+    schedule = loan_schedule(loan, today)
+    paid = [row for row in schedule if row["state"] == EMI_PAID]
+    unpaid = [row for row in schedule if row["state"] != EMI_PAID]
+    remaining = len(unpaid)
+    return {
+        "loan": loan,
+        "schedule": schedule,
+        "paid_count": len(paid),
+        "total_paid": as_money(sum((row["payment"].amount for row in paid), ZERO)),
+        "remaining_emis": remaining,
+        "remaining_payable": as_money(loan.emi_amount * remaining),
+        "next_due": unpaid[0] if unpaid else None,
+        "overdue": [row for row in schedule if row["state"] == EMI_OVERDUE],
+    }
+
+
+def emi_reminders(year: int, month: int, today: date | None = None) -> dict:
+    today = today or timezone.localdate()
+    selected = date(year, month, 1)
+    due_this_month = []
+    overdue = []
+    outstanding = ZERO
+    for loan in Loan.objects.filter(is_active=True).prefetch_related("emi_payments"):
+        status = loan_status(loan, today)
+        outstanding += status["remaining_payable"]
+        for row in status["schedule"]:
+            if row["emi_month"] == selected:
+                due_this_month.append({"loan": loan, **row})
+        overdue.extend({"loan": loan, **row} for row in status["overdue"])
+    return {
+        "due_this_month": due_this_month,
+        "overdue": overdue,
+        "total_outstanding": as_money(outstanding),
+        "has_loans": Loan.objects.filter(is_active=True).exists(),
+    }
+
+
+@transaction.atomic
+def record_emi_payment(*, loan: Loan, emi_month: date, date, amount, account: Account, reference="", notes=""):
+    txn = Transaction(
+        date=date,
+        entry_type=Transaction.DEBIT,
+        amount=as_money(amount),
+        category=ensure_emi_category(),
+        account=account,
+        description=f"EMI {emi_month:%b %Y} – {loan.name}",
+        reference_number=reference,
+        notes=notes,
+        kind=Transaction.KIND_OPERATING,
+        loan=loan,
+        emi_month=emi_month,
+    )
+    txn.full_clean()
+    txn.save()
+    return txn
 
 
 def year_choices():

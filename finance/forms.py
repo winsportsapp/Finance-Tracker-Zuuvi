@@ -1,10 +1,11 @@
+from datetime import date
 from decimal import Decimal
 
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.core.exceptions import ValidationError
 
-from .models import Account, Budget, Category, CompanySettings, Transaction
+from .models import Account, Budget, Category, CompanySettings, Loan, Transaction
 from .period import MONTH_CHOICES
 
 
@@ -28,6 +29,19 @@ class CategoryForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
+
+    def clean_category_type(self):
+        category_type = self.cleaned_data["category_type"]
+        if (
+            self.instance.pk
+            and category_type != self.instance.category_type
+            and self.instance.is_in_use()
+        ):
+            raise ValidationError(
+                "This category is already used by transactions or budgets, so its type "
+                "can't be changed. Create a new category instead."
+            )
+        return category_type
 
 
 class AccountForm(forms.ModelForm):
@@ -116,6 +130,8 @@ class TransactionForm(forms.ModelForm):
         cleaned = super().clean()
         entry_type = cleaned.get("entry_type")
         category = cleaned.get("category")
+        if self.instance.loan_id and entry_type != Transaction.DEBIT:
+            self.add_error("entry_type", "EMI payments must stay as debit transactions.")
         if category and entry_type == Transaction.DEBIT and category.category_type != Category.EXPENSE:
             self.add_error("category", "Debit transactions must use an expense category.")
         if category and entry_type == Transaction.CREDIT and category.category_type != Category.INCOME:
@@ -176,6 +192,108 @@ class TransferForm(forms.Form):
         if source and dest and source.pk == dest.pk:
             raise ValidationError("Source and destination accounts must be different.")
         return cleaned
+
+
+class LoanForm(forms.ModelForm):
+    first_emi_month = forms.DateField(
+        input_formats=["%Y-%m"],
+        widget=forms.DateInput(format="%Y-%m", attrs={"class": "form-control", "type": "month"}),
+        help_text=Loan._meta.get_field("first_emi_month").help_text,
+    )
+
+    class Meta:
+        model = Loan
+        fields = [
+            "name",
+            "lender",
+            "loan_amount",
+            "emi_amount",
+            "emi_day",
+            "first_emi_month",
+            "tenure_months",
+            "repayment_account",
+            "notes",
+            "is_active",
+        ]
+        labels = {"emi_amount": "EMI amount", "emi_day": "EMI due day", "tenure_months": "Number of EMIs"}
+        widgets = {
+            "name": forms.TextInput(attrs={"class": "form-control"}),
+            "lender": forms.TextInput(attrs={"class": "form-control"}),
+            "loan_amount": forms.NumberInput(attrs={"class": "form-control", "step": "0.01", "min": "0.01"}),
+            "emi_amount": forms.NumberInput(attrs={"class": "form-control", "step": "0.01", "min": "0.01"}),
+            "emi_day": forms.NumberInput(attrs={"class": "form-control", "min": "1", "max": "28"}),
+            "tenure_months": forms.NumberInput(attrs={"class": "form-control", "min": "1"}),
+            "repayment_account": forms.Select(attrs={"class": "form-select"}),
+            "notes": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+            "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["repayment_account"].queryset = Account.objects.filter(is_active=True)
+        if self.instance.pk and self.instance.repayment_account_id:
+            self.fields["repayment_account"].queryset |= Account.objects.filter(
+                pk=self.instance.repayment_account_id
+            )
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.instance.pk and self.instance.emi_payments.exists():
+            first = cleaned.get("first_emi_month")
+            tenure = cleaned.get("tenure_months")
+            if first and tenure:
+                trial = Loan(first_emi_month=first.replace(day=1), tenure_months=tenure)
+                months = set(trial.schedule_months())
+                outside = self.instance.emi_payments.exclude(emi_month__in=months)
+                if outside.exists():
+                    raise ValidationError(
+                        "Some recorded EMI payments would fall outside the new schedule. "
+                        "Adjust the first EMI month or number of EMIs."
+                    )
+        return cleaned
+
+
+class EmiPaymentForm(forms.Form):
+    emi_month = forms.TypedChoiceField(
+        label="EMI month",
+        coerce=lambda value: date.fromisoformat(value),
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    date = forms.DateField(
+        label="Payment date",
+        widget=forms.DateInput(attrs={"class": "form-control", "type": "date"}),
+    )
+    amount = forms.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        widget=forms.NumberInput(attrs={"class": "form-control", "step": "0.01", "min": "0.01"}),
+    )
+    account = forms.ModelChoiceField(
+        label="Paid from",
+        queryset=Account.objects.none(),
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    reference_number = forms.CharField(
+        required=False,
+        max_length=80,
+        widget=forms.TextInput(attrs={"class": "form-control"}),
+    )
+    notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+    )
+
+    def __init__(self, *args, loan, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.loan = loan
+        paid = set(loan.emi_payments.values_list("emi_month", flat=True))
+        self.fields["emi_month"].choices = [
+            (month.isoformat(), f"{month:%B %Y} (due {loan.due_date(month):%d %b})")
+            for month in loan.schedule_months()
+            if month not in paid
+        ]
+        self.fields["account"].queryset = Account.objects.filter(is_active=True)
 
 
 class BudgetForm(forms.ModelForm):

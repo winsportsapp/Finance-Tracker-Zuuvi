@@ -8,49 +8,49 @@
 {% block content %}
 <div class="row g-3 mb-4">
   <div class="col-md-6 col-xl-3">
-    <div class="card summary-card p-3 h-100">
+    <div class="card summary-card tile-budget p-3 h-100">
       <div class="label">Total monthly expense budget</div>
       <div class="value">{{ summary.total_expense_budget|inr }}</div>
     </div>
   </div>
   <div class="col-md-6 col-xl-3">
-    <div class="card summary-card p-3 h-100">
+    <div class="card summary-card tile-expense p-3 h-100">
       <div class="label">Actual expenses</div>
       <div class="value accent-expense">{{ summary.actual_expenses|inr }}</div>
     </div>
   </div>
   <div class="col-md-6 col-xl-3">
-    <div class="card summary-card p-3 h-100">
+    <div class="card summary-card tile-remaining{% if summary.remaining_expense_budget < 0 %} tile-negative{% endif %} p-3 h-100">
       <div class="label">Remaining expense budget</div>
       <div class="value {% if summary.remaining_expense_budget < 0 %}accent-warn{% endif %}">{{ summary.remaining_expense_budget|inr }}</div>
     </div>
   </div>
   <div class="col-md-6 col-xl-3">
-    <div class="card summary-card p-3 h-100">
+    <div class="card summary-card tile-income p-3 h-100">
       <div class="label">Total income</div>
       <div class="value accent-income">{{ summary.total_income|inr }}</div>
     </div>
   </div>
   <div class="col-md-6 col-xl-3">
-    <div class="card summary-card p-3 h-100">
+    <div class="card summary-card tile-expense p-3 h-100">
       <div class="label">Total expenses</div>
       <div class="value">{{ summary.total_expenses|inr }}</div>
     </div>
   </div>
   <div class="col-md-6 col-xl-3">
-    <div class="card summary-card p-3 h-100">
+    <div class="card summary-card tile-cashflow{% if summary.net_cash_flow < 0 %} tile-negative{% endif %} p-3 h-100">
       <div class="label">Net cash flow</div>
       <div class="value">{{ summary.net_cash_flow|inr }}</div>
     </div>
   </div>
   <div class="col-md-6 col-xl-3">
-    <div class="card summary-card p-3 h-100">
+    <div class="card summary-card tile-balance p-3 h-100">
       <div class="label">Total bank and cash balance</div>
       <div class="value">{{ summary.total_account_balance|inr }}</div>
     </div>
   </div>
   <div class="col-md-6 col-xl-3">
-    <div class="card summary-card p-3 h-100">
+    <div class="card summary-card tile-estimate p-3 h-100">
       <div class="label">Estimated next-month run cost</div>
       <div class="value">{{ estimate.needed|inr }}</div>
       <div class="small text-secondary">Based on this month's expense budget, or actual expenses if no budget is set. Cash on hand: {{ estimate.cash_on_hand|inr }}</div>
@@ -59,7 +59,7 @@
 </div>
 
 {% if bva.warnings %}
-<div class="alert alert-warning">
+<div class="alert alert-danger">
   <strong>Budget warnings:</strong>
   {% for row in bva.warnings %}
     {{ row.category }} is {{ row.status|lower }} ({{ row.utilization }}%).{% if not forloop.last %} {% endif %}
@@ -118,6 +118,32 @@
     <div class="card card-soft p-3 mb-3">
       <h2 class="h5">Income vs expenses</h2>
       <canvas id="ieChart" height="220"></canvas>
+    </div>
+    <div class="card card-soft p-3 mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h5 mb-0">EMI reminders</h2>
+        <a class="btn btn-sm btn-outline-primary" href="{% url 'finance:loan_list' %}">Loans</a>
+      </div>
+      {% if emi.has_loans %}
+        {% for row in emi.overdue %}
+        <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+          <span><a href="{% url 'finance:loan_detail' row.loan.pk %}">{{ row.loan.name }}</a> <span class="badge {{ row.state|emi_badge }}">Overdue</span><br><small class="text-secondary">{{ row.emi_month|date:"M Y" }} · due {{ row.due_date }} · {{ row.loan.emi_amount|inr }}</small></span>
+          <a class="btn btn-sm btn-danger" href="{% url 'finance:emi_pay' row.loan.pk %}?month={{ row.emi_month|date:'Y-m' }}">Pay</a>
+        </div>
+        {% endfor %}
+        {% for row in emi.due_this_month %}{% if row.state != "Overdue" %}
+        <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+          <span><a href="{% url 'finance:loan_detail' row.loan.pk %}">{{ row.loan.name }}</a> <span class="badge {{ row.state|emi_badge }}">{{ row.state }}</span><br><small class="text-secondary">{{ row.emi_month|date:"M Y" }} · due {{ row.due_date }} · {{ row.loan.emi_amount|inr }}</small></span>
+          {% if not row.payment %}<a class="btn btn-sm btn-outline-primary" href="{% url 'finance:emi_pay' row.loan.pk %}?month={{ row.emi_month|date:'Y-m' }}">Pay</a>{% endif %}
+        </div>
+        {% endif %}{% endfor %}
+        {% if not emi.overdue and not emi.due_this_month %}<p class="text-secondary mb-2">No EMIs due in {{ summary.month_label }}.</p>{% endif %}
+        <div class="d-flex justify-content-between pt-2">
+          <span>Total remaining EMIs</span><strong>{{ emi.total_outstanding|inr }}</strong>
+        </div>
+      {% else %}
+        <p class="text-secondary mb-0">No loans yet. <a href="{% url 'finance:loan_create' %}">Add a loan</a> to get EMI reminders.</p>
+      {% endif %}
     </div>
     <div class="card card-soft p-3">
       <h2 class="h5">Account balances</h2>
@@ -178,7 +204,7 @@
         labels: ["Income", "Expenses"],
         datasets: [{
           data: [{{ chart.income }}, {{ chart.expenses }}],
-          backgroundColor: ["#0f766e", "#b45309"]
+          backgroundColor: ["#226143", "#b26a00"]
         }]
       },
       options: {

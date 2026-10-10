@@ -6,8 +6,9 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import Account, Budget, Category, CompanySettings, Transaction
+from .models import Account, Budget, Category, CompanySettings, Loan, Transaction
 from .services import (
+    EMI_DUE,
     STATUS_FULL,
     STATUS_NEAR,
     STATUS_OVER,
@@ -17,8 +18,11 @@ from .services import (
     budget_vs_actual,
     create_transfer,
     dashboard_summary,
+    ensure_emi_category,
     expenses_by_category,
     income_expense_totals,
+    loan_status,
+    record_emi_payment,
 )
 
 
@@ -294,6 +298,230 @@ class CategoryValidationTests(FinanceBaseTestCase):
         self.expense_fuel.refresh_from_db()
         self.assertFalse(self.expense_fuel.is_active)
         self.assertTrue(Category.objects.filter(pk=self.expense_fuel.pk).exists())
+
+
+class CategoryAndAccountTests(FinanceBaseTestCase):
+    def category_data(self, **overrides):
+        data = {"name": "Packaging", "category_type": Category.EXPENSE, "description": "", "is_active": "on"}
+        data.update(overrides)
+        return data
+
+    def test_create_category_and_duplicate_rules(self):
+        self.login()
+        response = self.client.post(reverse("finance:category_create"), self.category_data())
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Category.objects.filter(name="Packaging", category_type=Category.EXPENSE).exists())
+
+        response = self.client.post(reverse("finance:category_create"), self.category_data())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Category.objects.filter(name="Packaging").count(), 1)
+
+        response = self.client.post(
+            reverse("finance:category_create"), self.category_data(category_type=Category.INCOME)
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Category.objects.filter(name="Packaging").count(), 2)
+
+    def test_type_change_blocked_when_category_in_use(self):
+        self.login()
+        Budget.objects.create(year=2026, month=10, category=self.expense_fuel, amount=Decimal("5000"))
+        response = self.client.post(
+            reverse("finance:category_edit", args=[self.expense_fuel.pk]),
+            self.category_data(name="Fuel", category_type=Category.INCOME),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "type can&#x27;t be changed")
+        self.expense_fuel.refresh_from_db()
+        self.assertEqual(self.expense_fuel.category_type, Category.EXPENSE)
+
+        response = self.client.post(
+            reverse("finance:category_edit", args=[self.expense_rent.pk]),
+            self.category_data(name="Office Rent", category_type=Category.INCOME),
+        )
+        self.assertEqual(response.status_code, 302)
+        self.expense_rent.refresh_from_db()
+        self.assertEqual(self.expense_rent.category_type, Category.INCOME)
+
+    def test_category_with_only_budget_is_deactivated_not_deleted(self):
+        self.login()
+        Budget.objects.create(year=2026, month=10, category=self.expense_salary, amount=Decimal("5000"))
+        response = self.client.post(reverse("finance:category_delete", args=[self.expense_salary.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.expense_salary.refresh_from_db()
+        self.assertFalse(self.expense_salary.is_active)
+
+    def test_unused_category_is_deleted(self):
+        self.login()
+        response = self.client.post(reverse("finance:category_delete", args=[self.expense_rent.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Category.objects.filter(pk=self.expense_rent.pk).exists())
+
+    def test_create_account_shows_opening_balance(self):
+        self.login()
+        response = self.client.post(
+            reverse("finance:account_create"),
+            {
+                "name": "Petty Cash",
+                "account_type": Account.PETTY_CASH,
+                "bank_name": "",
+                "account_number": "",
+                "opening_balance": "2500.00",
+                "opening_balance_date": "2026-10-01",
+                "notes": "",
+                "is_active": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        account = Account.objects.get(name="Petty Cash")
+        self.assertEqual(account_balance(account), Decimal("2500.00"))
+        response = self.client.get(reverse("finance:account_list"))
+        self.assertContains(response, "Petty Cash")
+        self.assertContains(response, "₹2,500.00")
+
+    def test_account_with_transactions_is_deactivated_unused_is_deleted(self):
+        self.login()
+        self.add_txn(account=self.sbi)
+        self.client.post(reverse("finance:account_delete", args=[self.sbi.pk]))
+        self.sbi.refresh_from_db()
+        self.assertFalse(self.sbi.is_active)
+
+        self.client.post(reverse("finance:account_delete", args=[self.cash.pk]))
+        self.assertFalse(Account.objects.filter(pk=self.cash.pk).exists())
+
+    def test_logout_ends_session(self):
+        self.login()
+        response = self.client.post(reverse("logout"))
+        self.assertRedirects(response, reverse("login"))
+        response = self.client.get(reverse("finance:dashboard"))
+        self.assertEqual(response.status_code, 302)
+
+
+class LoanTests(FinanceBaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.loan = Loan.objects.create(
+            name="Delivery van loan",
+            lender="SBI",
+            loan_amount=Decimal("500000"),
+            emi_amount=Decimal("12000"),
+            emi_day=5,
+            first_emi_month=date(2026, 9, 1),
+            tenure_months=24,
+            repayment_account=self.sbi,
+        )
+
+    def pay(self, emi_month, **kwargs):
+        defaults = {
+            "loan": self.loan,
+            "emi_month": emi_month,
+            "date": emi_month.replace(day=5),
+            "amount": Decimal("12000"),
+            "account": self.sbi,
+        }
+        defaults.update(kwargs)
+        return record_emi_payment(**defaults)
+
+    def test_create_loan_via_view(self):
+        self.login()
+        response = self.client.post(
+            reverse("finance:loan_create"),
+            {
+                "name": "Office loan",
+                "lender": "HDFC",
+                "loan_amount": "100000",
+                "emi_amount": "5000",
+                "emi_day": "10",
+                "first_emi_month": "2026-10",
+                "tenure_months": "20",
+                "repayment_account": self.hdfc.pk,
+                "notes": "",
+                "is_active": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        loan = Loan.objects.get(name="Office loan")
+        self.assertEqual(loan.first_emi_month, date(2026, 10, 1))
+        self.assertEqual(loan_status(loan, date(2026, 10, 1))["remaining_payable"], Decimal("100000.00"))
+
+    def test_emi_payment_counts_as_expense_and_reduces_balance(self):
+        Budget.objects.create(year=2026, month=10, category=ensure_emi_category(), amount=Decimal("12000"))
+        self.pay(date(2026, 10, 1))
+        self.assertEqual(account_balance(self.sbi), Decimal("88000.00"))
+        self.assertEqual(income_expense_totals(2026, 10)["expenses"], Decimal("12000.00"))
+        row = budget_vs_actual(2026, 10)["rows"][0]
+        self.assertEqual(row["category"], "Loan EMI")
+        self.assertEqual(row["status"], STATUS_FULL)
+
+    def test_pay_via_view_and_duplicate_month_rejected(self):
+        self.login()
+        data = {"emi_month": "2026-10-01", "date": "2026-10-05", "amount": "12000", "account": self.sbi.pk}
+        response = self.client.post(reverse("finance:emi_pay", args=[self.loan.pk]), data)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.loan.emi_payments.count(), 1)
+
+        response = self.client.post(reverse("finance:emi_pay", args=[self.loan.pk]), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.loan.emi_payments.count(), 1)
+
+        with self.assertRaises(ValidationError):
+            self.pay(date(2026, 10, 1))
+
+    def test_month_outside_tenure_rejected(self):
+        self.login()
+        response = self.client.post(
+            reverse("finance:emi_pay", args=[self.loan.pk]),
+            {"emi_month": "2026-08-01", "date": "2026-08-05", "amount": "12000", "account": self.sbi.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(self.loan.emi_payments.exists())
+
+    def test_status_overdue_and_due(self):
+        today = date(2026, 10, 10)
+        status = loan_status(self.loan, today)
+        self.assertEqual(status["paid_count"], 0)
+        self.assertEqual([row["emi_month"] for row in status["overdue"]], [date(2026, 9, 1), date(2026, 10, 1)])
+        self.assertEqual(status["remaining_payable"], Decimal("288000.00"))
+
+        self.pay(date(2026, 9, 1))
+        status = loan_status(self.loan, today)
+        self.assertEqual(status["paid_count"], 1)
+        self.assertEqual(status["remaining_payable"], Decimal("276000.00"))
+        self.assertEqual(status["next_due"]["emi_month"], date(2026, 10, 1))
+        self.assertEqual(len(status["overdue"]), 1)
+
+        status = loan_status(self.loan, date(2026, 10, 3))
+        self.assertEqual(status["overdue"], [])
+        self.assertEqual(status["next_due"]["state"], EMI_DUE)
+
+    def test_deleting_emi_transaction_reopens_month(self):
+        txn = self.pay(date(2026, 9, 1))
+        txn.delete()
+        self.assertEqual(account_balance(self.sbi), Decimal("100000.00"))
+        self.assertEqual(loan_status(self.loan, date(2026, 10, 10))["paid_count"], 0)
+
+    def test_loan_with_payments_is_closed_not_deleted(self):
+        self.login()
+        self.pay(date(2026, 9, 1))
+        self.client.post(reverse("finance:loan_delete", args=[self.loan.pk]))
+        self.loan.refresh_from_db()
+        self.assertFalse(self.loan.is_active)
+
+        other = Loan.objects.create(
+            name="Unused", lender="X", loan_amount=1, emi_amount=1, emi_day=1,
+            first_emi_month=date(2026, 10, 1), tenure_months=1, repayment_account=self.hdfc,
+        )
+        self.client.post(reverse("finance:loan_delete", args=[other.pk]))
+        self.assertFalse(Loan.objects.filter(pk=other.pk).exists())
+
+    def test_dashboard_shows_emi_reminders_and_empty_state(self):
+        self.login()
+        response = self.client.get(reverse("finance:dashboard") + "?year=2026&month=10")
+        self.assertContains(response, "EMI reminders")
+        self.assertContains(response, "Delivery van loan")
+        self.loan.delete()
+        response = self.client.get(reverse("finance:dashboard"))
+        self.assertContains(response, "No loans yet.")
+        self.assertContains(self.client.get(reverse("finance:loan_list")), "No loans yet.")
 
 
 class ReportConsistencyTests(FinanceBaseTestCase):

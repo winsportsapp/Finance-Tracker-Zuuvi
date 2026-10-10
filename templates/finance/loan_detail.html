@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% load money_tags %}
+{% block title %}{{ loan.name }}{% endblock %}
+{% block heading %}{{ loan.name }}{% endblock %}
+{% block subtitle %}{{ loan.lender }} · EMI due on day {{ loan.emi_day }} · paid from {{ loan.repayment_account }}{% if not loan.is_active %} · Closed{% endif %}{% endblock %}
+{% block period %}{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-3">
+  <div class="col-md-3"><div class="card summary-card p-3"><div class="label">Loan amount</div><div class="value">{{ loan.loan_amount|inr }}</div></div></div>
+  <div class="col-md-3"><div class="card summary-card p-3"><div class="label">EMI</div><div class="value">{{ loan.emi_amount|inr }}</div><div class="small text-secondary">{{ status.paid_count }} of {{ loan.tenure_months }} paid</div></div></div>
+  <div class="col-md-3"><div class="card summary-card p-3"><div class="label">Total paid</div><div class="value accent-expense">{{ status.total_paid|inr }}</div></div></div>
+  <div class="col-md-3"><div class="card summary-card p-3"><div class="label">Remaining payable</div><div class="value">{{ status.remaining_payable|inr }}</div><div class="small text-secondary">{{ status.remaining_emis }} EMIs left</div></div></div>
+</div>
+{% if status.overdue %}
+<div class="alert alert-danger">{{ status.overdue|length }} EMI{{ status.overdue|length|pluralize }} overdue.</div>
+{% endif %}
+<p class="text-secondary">{{ loan.notes }}</p>
+<div class="d-flex flex-wrap gap-2 mb-3">
+  {% if status.next_due %}<a class="btn btn-primary" href="{% url 'finance:emi_pay' loan.pk %}">Pay EMI</a>{% endif %}
+  <a class="btn btn-outline-primary" href="{% url 'finance:loan_edit' loan.pk %}">Edit loan</a>
+  <form class="d-inline" method="post" action="{% url 'finance:loan_delete' loan.pk %}" onsubmit="return confirm('Close or delete this loan?');">
+    {% csrf_token %}
+    <button class="btn btn-outline-danger" type="submit">Close / delete</button>
+  </form>
+</div>
+<div class="card card-soft p-3">
+  <h2 class="h5">EMI schedule</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>#</th><th>EMI month</th><th>Due date</th><th>Status</th><th>Paid on</th><th>Account</th><th class="text-end">Amount</th><th></th></tr></thead>
+      <tbody>
+        {% for row in status.schedule %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ row.emi_month|date:"F Y" }}</td>
+          <td>{{ row.due_date }}</td>
+          <td><span class="badge {{ row.state|emi_badge }}">{{ row.state }}</span></td>
+          <td>{% if row.payment %}<a href="{% url 'finance:transaction_detail' row.payment.pk %}">{{ row.payment.date }}</a>{% else %}—{% endif %}</td>
+          <td>{% if row.payment %}{{ row.payment.account }}{% else %}—{% endif %}</td>
+          <td class="text-end">{% if row.payment %}{{ row.payment.amount|inr }}{% else %}{{ loan.emi_amount|inr }}{% endif %}</td>
+          <td class="text-end">
+            {% if not row.payment and loan.is_active %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'finance:emi_pay' loan.pk %}?month={{ row.emi_month|date:'Y-m' }}">Pay</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

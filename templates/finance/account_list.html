@@ -10,7 +10,7 @@
   <a class="btn btn-primary" href="{% url 'finance:account_create' %}">Add account</a>
   <a class="btn btn-outline-primary" href="{% url 'finance:transfer_create' %}">Transfer between accounts</a>
 </div>
-<div class="card summary-card p-3 mb-3">
+<div class="card summary-card tile-balance p-3 mb-3">
   <div class="label">Total active account balance</div>
   <div class="value">{{ total_balance|inr }}</div>
 </div>
